@@ -37,6 +37,10 @@ Protocol:
  - in the case that we don't have ESC telemetry, consider probing ESCs periodically with an "OK"-request while disarmed
 */
 
+#include <AP_HAL/AP_HAL.h>
+
+extern const AP_HAL::HAL& hal;
+
 #include <AP_Math/AP_Math.h>
 
 #include "SIM_FETtecOneWireESC.h"
@@ -227,7 +231,7 @@ void FETtecOneWireESC::running_handle_config_message(FETtecOneWireESC::ESC &esc)
     case ConfigMessageType::NOT_OK:
         break;
     case ConfigMessageType::BL_START_FW:       // BL only
-        ::fprintf(stderr, "received unexpected BL_START_FW message\n");
+        hal.console->printf("received unexpected BL_START_FW message\n");
         AP_HAL::panic("received unexpected BL_START_FW message");
         return;
     case ConfigMessageType::BL_PAGES_TO_FLASH: // BL only
@@ -374,8 +378,8 @@ void FETtecOneWireESC::consume_bytes(uint8_t count)
         buflen = 0;
         return;
     }
-    memmove(&u.buffer[0], &u.buffer[u.config_message_header.frame_len], buflen - u.config_message_header.frame_len);
-    buflen -= u.config_message_header.frame_len;
+    memmove(&u.buffer[0], &u.buffer[count], buflen - count);
+    buflen -= count;
 }
 
 void FETtecOneWireESC::update_input()

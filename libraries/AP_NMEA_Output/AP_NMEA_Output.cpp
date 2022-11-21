@@ -16,6 +16,7 @@
    Author: Francisco Ferreira (some code is copied from sitl_gps.cpp)
 
  */
+#define ALLOW_DOUBLE_MATH_FUNCTIONS
 
 #include "AP_NMEA_Output.h"
 
@@ -95,28 +96,31 @@ void AP_NMEA_Output::update()
 
     auto &ahrs = AP::ahrs();
 
-    // get location (note: get_position from AHRS always returns true after having GPS position once)
+    // get location (note: get_location from AHRS always returns true after having GPS position once)
     Location loc;
     bool pos_valid = ahrs.get_location(loc);
 
     // format latitude
     char lat_string[13];
-    float deg = fabsf(loc.lat * 1.0e-7f);
+    double deg = fabs(loc.lat * 1.0e-7f);
+    double min_dec = ((fabs(loc.lat) - (unsigned)deg * 1.0e7)) * 60 * 1.e-7f; 
     snprintf(lat_string,
              sizeof(lat_string),
              "%02u%08.5f,%c",
              (unsigned) deg,
-             double((deg - int(deg)) * 60),
+             min_dec,
              loc.lat < 0 ? 'S' : 'N');
+
 
     // format longitude
     char lng_string[14];
-    deg = fabsf(loc.lng * 1.0e-7f);
+    deg = fabs(loc.lng * 1.0e-7f);
+    min_dec = ((fabs(loc.lng) - (unsigned)deg * 1.0e7)) * 60 * 1.e-7f; 
     snprintf(lng_string,
              sizeof(lng_string),
              "%03u%08.5f,%c",
              (unsigned) deg,
-             double((deg - int(deg)) * 60),
+             min_dec,
              loc.lng < 0 ? 'W' : 'E');
 
     // format GGA message
@@ -138,7 +142,7 @@ void AP_NMEA_Output::update()
 
     // get speed
     Vector2f speed = ahrs.groundspeed_vector();
-    float speed_knots = norm(speed.x, speed.y) * M_PER_SEC_TO_KNOTS;
+    float speed_knots = speed.length() * M_PER_SEC_TO_KNOTS;
     float heading = wrap_360(degrees(atan2f(speed.x, speed.y)));
 
     // format RMC message
@@ -167,24 +171,15 @@ void AP_NMEA_Output::update()
             continue;
         }
 
-        if (gga_res != -1) {
-            _uart[i]->write(gga);
-            _uart[i]->write(gga_end);
-        }
+        _uart[i]->write(gga);
+        _uart[i]->write(gga_end);
 
-        if (rmc_res != -1) {
-            _uart[i]->write(rmc);
-            _uart[i]->write(rmc_end);
-        }
+        _uart[i]->write(rmc);
+        _uart[i]->write(rmc_end);
     }
 
-    if (gga_res != -1) {
-        free(gga);
-    }
-
-    if (rmc_res != -1) {
-        free(rmc);
-    }
+    free(gga);
+    free(rmc);
 }
 
 #endif  // HAL_NMEA_OUTPUT_ENABLED

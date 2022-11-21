@@ -1,5 +1,7 @@
 #pragma once
 
+#include "AP_Compass_config.h"
+
 #include <inttypes.h>
 
 #include <AP_Common/AP_Common.h>
@@ -81,8 +83,7 @@ public:
     Compass();
 
     /* Do not allow copies */
-    Compass(const Compass &other) = delete;
-    Compass &operator=(const Compass&) = delete;
+    CLASS_NO_COPY(Compass);
 
     // get singleton instance
     static Compass *get_singleton() {
@@ -130,8 +131,10 @@ public:
     /// @param  offsets             Offsets to the raw mag_ values in milligauss.
     ///
     void set_and_save_offsets(uint8_t i, const Vector3f &offsets);
+#if AP_COMPASS_DIAGONALS_ENABLED
     void set_and_save_diagonals(uint8_t i, const Vector3f &diagonals);
     void set_and_save_offdiagonals(uint8_t i, const Vector3f &diagonals);
+#endif
     void set_and_save_scale_factor(uint8_t i, float scale_factor);
     void set_and_save_orientation(uint8_t i, Rotation orientation);
 
@@ -173,8 +176,10 @@ public:
         _per_motor.calibration_end();
     }
 #endif
-    
-    void start_calibration_all(bool retry=false, bool autosave=false, float delay_sec=0.0f, bool autoreboot = false);
+
+    // start_calibration_all will only return false if there are no
+    // compasses to calibrate.
+    bool start_calibration_all(bool retry=false, bool autosave=false, float delay_sec=0.0f, bool autoreboot = false);
 
     void cancel_calibration_all();
 
@@ -207,11 +212,13 @@ public:
     const Vector3f &get_offsets(uint8_t i) const { return _get_state(Priority(i)).offset; }
     const Vector3f &get_offsets(void) const { return get_offsets(_first_usable); }
 
+#if AP_COMPASS_DIAGONALS_ENABLED
     const Vector3f &get_diagonals(uint8_t i) const { return _get_state(Priority(i)).diagonals; }
     const Vector3f &get_diagonals(void) const { return get_diagonals(_first_usable); }
 
     const Vector3f &get_offdiagonals(uint8_t i) const { return _get_state(Priority(i)).offdiagonals; }
     const Vector3f &get_offdiagonals(void) const { return get_offdiagonals(_first_usable); }
+#endif  // AP_COMPASS_DIAGONALS_ENABLED
 
     // learn offsets accessor
     bool learn_offsets_enabled() const { return _learn == LEARN_INFLIGHT; }
@@ -231,9 +238,8 @@ public:
     bool auto_declination_enabled() const { return _auto_declination != 0; }
 
     // set overall board orientation
-    void set_board_orientation(enum Rotation orientation, Matrix3f* custom_rotation = nullptr) {
+    void set_board_orientation(enum Rotation orientation) {
         _board_orientation = orientation;
-        _custom_rotation = custom_rotation;
     }
 
     /// Set the motor compensation type
@@ -334,13 +340,14 @@ public:
       fast compass calibration given vehicle position and yaw
      */
     MAV_RESULT mag_cal_fixed_yaw(float yaw_deg, uint8_t compass_mask,
-                                 float lat_deg, float lon_deg);
+                                 float lat_deg, float lon_deg,
+                                 bool force_use=false);
 
-#if HAL_MSP_COMPASS_ENABLED
+#if AP_COMPASS_MSP_ENABLED
     void handle_msp(const MSP::msp_compass_data_message_t &pkt);
 #endif
 
-#if HAL_EXTERNAL_AHRS_ENABLED
+#if AP_COMPASS_EXTERNALAHRS_ENABLED
     void handle_external(const AP_ExternalAHRS::mag_data_message_t &pkt);
 #endif
 
@@ -449,12 +456,6 @@ private:
     // board orientation from AHRS
     enum Rotation _board_orientation = ROTATION_NONE;
 
-    // custom board rotation matrix
-    Matrix3f* _custom_rotation;
-
-    // custom external compass rotation matrix
-    Matrix3f* _custom_external_rotation;
-
     // declination in radians
     AP_Float    _declination;
 
@@ -471,11 +472,6 @@ private:
     // automatic compass orientation on calibration
     AP_Int8     _rotate_auto;
 
-    // custom compass rotation
-    AP_Float    _custom_roll;
-    AP_Float    _custom_pitch;
-    AP_Float    _custom_yaw;
-    
     // throttle expressed as a percentage from 0 ~ 1.0, used for motor compensation
     float       _thr;
 
@@ -486,8 +482,10 @@ private:
         Compass::Priority priority;
         AP_Int8     orientation;
         AP_Vector3f offset;
+#if AP_COMPASS_DIAGONALS_ENABLED
         AP_Vector3f diagonals;
         AP_Vector3f offdiagonals;
+#endif
         AP_Float    scale_factor;
 
         // device id detected at init.
@@ -600,7 +598,7 @@ private:
 
     bool _cal_thread_started;
 
-#if HAL_MSP_COMPASS_ENABLED
+#if AP_COMPASS_MSP_ENABLED
     uint8_t msp_instance_mask;
 #endif
     bool init_done;

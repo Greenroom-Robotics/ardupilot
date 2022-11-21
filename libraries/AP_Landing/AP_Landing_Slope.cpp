@@ -23,6 +23,7 @@
 #include <AP_LandingGear/AP_LandingGear.h>
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_GPS/AP_GPS.h>
+#include <AP_Logger/AP_Logger.h>
 
 void AP_Landing::type_slope_do_land(const AP_Mission::Mission_Command& cmd, const float relative_altitude)
 {
@@ -180,7 +181,7 @@ bool AP_Landing::type_slope_verify_land(const Location &prev_WP_loc, Location &n
     return false;
 }
 
-void AP_Landing::type_slope_adjust_landing_slope_for_rangefinder_bump(AP_Vehicle::FixedWing::Rangefinder_State &rangefinder_state, Location &prev_WP_loc, Location &next_WP_loc, const Location &current_loc, const float wp_distance, int32_t &target_altitude_offset_cm)
+void AP_Landing::type_slope_adjust_landing_slope_for_rangefinder_bump(AP_FixedWing::Rangefinder_State &rangefinder_state, Location &prev_WP_loc, Location &next_WP_loc, const Location &current_loc, const float wp_distance, int32_t &target_altitude_offset_cm)
 {
     // check the rangefinder correction for a large change. When found, recalculate the glide slope. This is done by
     // determining the slope from your current location to the land point then following that back up to the approach
@@ -282,15 +283,11 @@ void AP_Landing::type_slope_setup_landing_glide_slope(const Location &prev_WP_lo
         aim_height = flare_alt*2;
     }
 
-    // calculate slope to landing point
-    bool is_first_calc = is_zero(slope);
-    slope = (sink_height - aim_height) / total_distance;
-    if (is_first_calc) {
-        gcs().send_text(MAV_SEVERITY_INFO, "Landing glide slope %.1f degrees", (double)degrees(atanf(slope)));
-    }
-
-    // time before landing that we will flare
-    float flare_time = aim_height / SpdHgt_Controller->get_land_sinkrate();
+    // calculate time spent in flare assuming the sink rate reduces over time from sink_rate at aim_height
+    // to tecs_controller->get_land_sinkrate() at touchdown
+    const float weight = constrain_float(0.01f*(float)flare_effectivness_pct, 0.0f, 1.0f);
+    const float flare_sink_rate_avg = MAX(weight * tecs_Controller->get_land_sinkrate() + (1.0f - weight) * sink_rate, 0.1f);
+    const float flare_time = aim_height / flare_sink_rate_avg;
 
     // distance to flare is based on ground speed, adjusted as we
     // get closer. This takes into account the wind
@@ -311,6 +308,13 @@ void AP_Landing::type_slope_setup_landing_glide_slope(const Location &prev_WP_lo
     Location loc = next_WP_loc;
     loc.offset_bearing(land_bearing_cd * 0.01f, -flare_distance);
     loc.alt += aim_height*100;
+
+    // calculate slope to landing point
+    bool is_first_calc = is_zero(slope);
+    slope = (sink_height - aim_height) / (total_distance - flare_distance);
+    if (is_first_calc) {
+        gcs().send_text(MAV_SEVERITY_INFO, "Landing glide slope %.1f degrees", (double)degrees(atanf(slope)));
+    }
 
     // calculate point along that slope 500m ahead
     loc.offset_bearing(land_bearing_cd * 0.01f, land_projection);
@@ -334,7 +338,7 @@ int32_t AP_Landing::type_slope_get_target_airspeed_cm(void)
     // we're landing, check for custom approach and
     // pre-flare airspeeds. Also increase for head-winds
 
-    const float land_airspeed = SpdHgt_Controller->get_land_airspeed();
+    const float land_airspeed = tecs_Controller->get_land_airspeed();
     int32_t target_airspeed_cm = aparm.airspeed_cruise_cm;
 
     switch (type_slope_stage) {
@@ -408,7 +412,7 @@ void AP_Landing::type_slope_log(void) const
 // @Field: slopeInit: Initial slope to landing point
 // @Field: altO: Rangefinder correction
 // @Field: fh: Height for flare timing.
-    AP::logger().Write("LAND", "TimeUS,stage,f1,f2,slope,slopeInit,altO,fh", "QBBBffff",
+    AP::logger().WriteStreaming("LAND", "TimeUS,stage,f1,f2,slope,slopeInit,altO,fh", "QBBBffff",
                                             AP_HAL::micros64(),
                                             type_slope_stage,
                                             flags,

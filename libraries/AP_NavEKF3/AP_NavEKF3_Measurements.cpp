@@ -4,6 +4,7 @@
 #include <GCS_MAVLink/GCS.h>
 #include <AP_Logger/AP_Logger.h>
 #include <AP_DAL/AP_DAL.h>
+#include <AP_InternalError/AP_InternalError.h>
 
 /********************************************************
 *              OPT FLOW AND RANGE FINDER                *
@@ -193,11 +194,10 @@ void NavEKF3_core::writeOptFlowMeas(const uint8_t rawFlowQuality, const Vector2f
     // need to run the optical flow takeoff detection
     detectOptFlowTakeoff();
 
-    // calculate rotation matrices at mid sample time for flow observations
-    stateStruct.quat.rotation_matrix(Tbn_flow);
     // don't use data with a low quality indicator or extreme rates (helps catch corrupt sensor data)
     if ((rawFlowQuality > 0) && rawFlowRates.length() < 4.2f && rawGyroRates.length() < 4.2f) {
         // correct flow sensor body rates for bias and write
+        of_elements ofDataNew {};
         ofDataNew.bodyRadXYZ.x = rawGyroRates.x - flowGyroBias.x;
         ofDataNew.bodyRadXYZ.y = rawGyroRates.y - flowGyroBias.y;
         // the sensor interface doesn't provide a z axis rate so use the rate from the nav sensor instead
@@ -693,8 +693,8 @@ void NavEKF3_core::readGpsData()
             gpsDataNew.hgt = 0.01 * (gpsloc.alt - EKF_origin.alt);
         }
         storedGPS.push(gpsDataNew);
-        // declare GPS available for use
-        gpsNotAvailable = false;
+        // declare GPS in use
+        gpsIsInUse = true;
     }
 }
 
@@ -790,7 +790,7 @@ void NavEKF3_core::correctEkfOriginHeight()
     } else if (activeHgtSource == AP_NavEKF_Source::SourceZ::RANGEFINDER) {
         // use the worse case expected terrain gradient and vehicle horizontal speed
         const ftype maxTerrGrad = 0.25;
-        ekfOriginHgtVar += sq(maxTerrGrad * norm(stateStruct.velocity.x , stateStruct.velocity.y) * deltaTime);
+        ekfOriginHgtVar += sq(maxTerrGrad * stateStruct.velocity.xy().length() * deltaTime);
     } else {
         // by definition our height source is absolute so cannot run this filter
         return;
@@ -831,13 +831,12 @@ void NavEKF3_core::readAirSpdData()
 
     const auto *airspeed = dal.airspeed();
     if (airspeed &&
-        airspeed->use(selected_airspeed) &&
-        airspeed->healthy(selected_airspeed) &&
         (airspeed->last_update_ms(selected_airspeed) - timeTasReceived_ms) > frontend->sensorIntervalMin_ms) {
         tasDataNew.tas = airspeed->get_airspeed(selected_airspeed) * EAS2TAS;
         timeTasReceived_ms = airspeed->last_update_ms(selected_airspeed);
         tasDataNew.time_ms = timeTasReceived_ms - frontend->tasDelay_ms;
         tasDataNew.tasVariance = sq(MAX(frontend->_easNoise * EAS2TAS, 0.5f));
+        tasDataNew.allowFusion = airspeed->healthy(selected_airspeed) && airspeed->use(selected_airspeed);
 
         // Correct for the average intersampling delay due to the filter update rate
         tasDataNew.time_ms -= localFilterTimeStep_ms/2;
@@ -856,6 +855,7 @@ void NavEKF3_core::readAirSpdData()
         is_positive(defaultAirSpeed)) {
         tasDataDelayed.tas = defaultAirSpeed * EAS2TAS;
         tasDataDelayed.tasVariance = sq(MAX(defaultAirSpeedVariance, easErrVar));
+        tasDataDelayed.allowFusion = true;
         tasDataDelayed.time_ms = 0;
         usingDefaultAirspeed = true;
     } else {
@@ -863,6 +863,7 @@ void NavEKF3_core::readAirSpdData()
     }
 }
 
+#if EK3_FEATURE_BEACON_FUSION
 /********************************************************
 *              Range Beacon Measurements                *
 ********************************************************/
@@ -979,6 +980,7 @@ void NavEKF3_core::readRngBcnData()
     }
 
 }
+#endif  // EK3_FEATURE_BEACON_FUSION
 
 /********************************************************
 *              Independant yaw sensor measurements      *

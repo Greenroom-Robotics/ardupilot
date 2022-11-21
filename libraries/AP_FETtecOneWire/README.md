@@ -4,7 +4,7 @@ FETtec OneWire is an [ESC](https://en.wikipedia.org/wiki/Electronic_speed_contro
 It is a (bidirectional) [digital full-duplex asynchronous serial communication protocol](https://en.wikipedia.org/wiki/Asynchronous_serial_communication) running at 500Kbit/s Baudrate. It requires three wire (RX, TX and GND) connection (albeit the name OneWire) regardless of the number of ESCs connected.
 Unlike bidirectional-Dshot, the FETtec OneWire protocol does not need one DMA channel per ESC for bidirectional communication. 
 
-For purchase, connection and configuration information please see the [Ardupilot FETtec OneWire wiki page](https://ardupilot.org/copter/docs/common-fettec-onewire.html).
+For purchase, connection and configuration information please see the [ArduPilot FETtec OneWire wiki page](https://ardupilot.org/copter/docs/common-fettec-onewire.html).
 
 ## Features of this device driver
 
@@ -17,7 +17,6 @@ For purchase, connection and configuration information please see the [Ardupilot
   - sum the current telemetry info from all ESCs and use it as virtual battery current monitor sensor
   - average the voltage telemetry info and use it as virtual battery voltage monitor sensor
   - average the temperature telemetry info and use it as virtual battery temperature monitor sensor
-- ~~report telemetry communication error rate in the dataflash logs~~
 - Obey the safety switch. Keeps motors from turning
 - Use `SERVO_FWT_MASK` to define which servo output should be routed to FETtec ESCs
 - Use `SERVO_FWT_RVMASK` to define the rotation direction of the motors
@@ -29,8 +28,8 @@ For purchase, connection and configuration information please see the [Ardupilot
   - check that the desired motor poles parameter (`SERVO_FWT_POLES`) is valid
   - check that the all desired ESCs are found and configured
   - check that the ESCs are periodically sending telemetry data
-- re-enumerate all ESCs if not armed (motors not spinning) when
-  - communication with one of the ESCs is lost
+- re-init and configure an ESC(s) if not armed (motors not spinning) when
+  - telemetry communication with the ESC(s) is lost
 - adds a serial simulator (--uartF=sim:fetteconewireesc) of FETtec OneWire ESCs
 - adds autotest (using the simulator) to:
   - simulate telemetry voltage, current, temperature, RPM data using SITL internal variables
@@ -40,9 +39,9 @@ For purchase, connection and configuration information please see the [Ardupilot
   - fly a copter over a simulated serial link connection
 
 
-## Ardupilot to ESC protocol
+## ArduPilot to ESC protocol
 
-The FETtec OneWire protocol supports up to 24 ESCs. As most copters only use at most 12 motors, Ardupilot's implementation supports only 12 (`ESC_TELEM_MAX_ESCS`)to save memory.
+The FETtec OneWire protocol supports up to 24 ESCs without telemetry and up to 15 ESCs with telemetry.
 
 There are two types of messages sent to the ESCs configuration and fast-throttle messages:
 
@@ -96,7 +95,7 @@ The signal is used to transfer the eleven bit throttle signals with as few bytes
 All motors wait for the complete message with all throttle signals before changing their output.
 
 If telemetry is requested the ESCs will answer them in the ESC-ID order.
-See *ESC to Ardupilot Protocol* section below and comments in `FETtecOneWire.cpp` for details.
+See *ESC to ArduPilot Protocol* section below and comments in `AP_FETtecOneWire.cpp` for details.
 
 
 ### Timing
@@ -104,13 +103,13 @@ See *ESC to Ardupilot Protocol* section below and comments in `FETtecOneWire.cpp
 Four ESCs need 90us for the fast-throttle request and telemetry reception. With four ESCs 11kHz update would be possible.
 Each additional ESC adds 11 extra fast-throttle command bits, so the update rate is lowered by each additional ESC.
 If you use 8 ESCs, it needs 160us including telemetry response, so 5.8kHz update rate would be possible.
-The FETtec Ardupilot device driver limits the message transmit period to `_min_fast_throttle_period_us` according to the number of ESCs used.
-The update() function has an extra invocation period limit so that even at very high loop rates the the ESCs will still operate correctly albeit doing some decimation.
+The FETtec ArduPilot device driver limits the message transmit period to `_min_fast_throttle_period_us` according to the number of ESCs used.
+The update() function has an extra invocation period limit so that even at very high loop rates the ESCs will still operate correctly albeit doing some decimation.
 The current update rate for Copter is 400Hz (~2500us) and for other vehicles is 50Hz (~20000us) so we are bellow device driver limit.
 
 **Note:** The FETtec ESCs firmware requires at least a 4Hz fast-throttle update rate (max. 250ms between messages) otherwise the FETtec ESC disarm (stop) the motors.
 
-## ESC to Ardupilot protocol
+## ESC to ArduPilot protocol
 
 OneWire ESC telemetry information is sent back to the autopilot:
 
@@ -121,7 +120,7 @@ OneWire ESC telemetry information is sent back to the autopilot:
 - Temperature (°C/10)
 - CRC errors (ArduPilot->ESC) counter
 
-This information is used by Ardupilot to:
+This information is used by ArduPilot to:
 
 - log the status of each ESC to the SDCard or internal Flash, for post flight analysis
 - send the status of each ESC to the ground station or companion computer for real-time monitoring
@@ -136,8 +135,12 @@ The data is forwarded to the `AP_ESC_Telem` class that distributes it to other p
 
 ## Function structure
 
-There are two public top level functions `update()` and `pre_arm_check()`. And these two call all other private internal functions:
+There are two public top level functions `update()` and `pre_arm_check()`.
+And these two call all other private internal functions.
+A single (per ESC) state variable (`_escs[i]._state`) is used in both the RX and TX state machines.
+Here is the call graph:
 
+```
 update()
   init()
     init_uart()
@@ -155,24 +158,26 @@ update()
     pack_fast_throttle_command()
     transmit()
 pre_arm_check()
+```
 
 
 ## Device driver parameters
 
 The `SERVO_FTW_MASK` parameter selects which servo outputs, if any, will be routed to FETtec ESCs.
 You need to reboot after changing this parameter.
-When `HAL_WITH_ESC_TELEM` is active (default) only the first 12 (`ESC_TELEM_MAX_ESCS`) can be used.
+When `HAL_WITH_ESC_TELEM` is active (default) only the first 15 (`ESC_TELEM_MAX_ESCS`) can be used.
 The FETtec ESC IDs set inside the FETtec firmware by the FETtec configuration tool are one-indexed.
 These IDs must start at ID 1 and be in a single contiguous block.
-You do not need to change these FETtec IDs if you change the servo output assignments inside ArduPilot the using the `SERVO_FTW_MASK` parameter
+You do not need to change these FETtec IDs if you change the servo output assignments inside ArduPilot the using the `SERVO_FTW_MASK` parameter.
 
 The `SERVO_FTW_RVMASK` parameter selects which servo outputs, if any, will reverse their rotation.
-This parameter is only visible if the `SERVO_FTW_MASK` parameter has at least one bit set.
 This parameter effects the outputs immediately when changed and the motors are not armed.
+This parameter is only visible if the `SERVO_FTW_MASK` parameter has at least one bit set.
 
 The `SERVO_FTW_POLES` parameter selects Number of motor electrical poles.
 It is used to calculate the motors RPM
 This parameter effects the RPM calculation immediately when changed.
+This parameter is only visible if the `SERVO_FTW_MASK` parameter has at least one bit set.
 
 ## Extra features
 

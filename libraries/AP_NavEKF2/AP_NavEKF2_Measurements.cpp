@@ -1,9 +1,9 @@
 #include <AP_HAL/AP_HAL.h>
 
 #include "AP_NavEKF2_core.h"
-#include <AP_Vehicle/AP_Vehicle.h>
 #include <GCS_MAVLink/GCS.h>
 #include <AP_DAL/AP_DAL.h>
+#include <AP_InternalError/AP_InternalError.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -735,7 +735,7 @@ void NavEKF2_core::correctEkfOriginHeight()
     } else if (activeHgtSource == HGT_SOURCE_RNG) {
         // use the worse case expected terrain gradient and vehicle horizontal speed
         const ftype maxTerrGrad = 0.25f;
-        ekfOriginHgtVar += sq(maxTerrGrad * norm(stateStruct.velocity.x , stateStruct.velocity.y) * deltaTime);
+        ekfOriginHgtVar += sq(maxTerrGrad * stateStruct.velocity.xy().length() * deltaTime);
     } else {
         // by definition our height source is absolute so cannot run this filter
         return;
@@ -795,6 +795,7 @@ void NavEKF2_core::readAirSpdData()
 *              Range Beacon Measurements                *
 ********************************************************/
 
+#if AP_BEACON_ENABLED
 // check for new range beacon data and push to data buffer if available
 void NavEKF2_core::readRngBcnData()
 {
@@ -901,6 +902,7 @@ void NavEKF2_core::readRngBcnData()
     rngBcnDataToFuse = storedRangeBeacon.recall(rngBcnDataDelayed,imuDataDelayed.time_ms);
 
 }
+#endif  // AP_BEACON_ENABLED
 
 /*
   update timing statistics structure
