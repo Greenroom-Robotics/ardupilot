@@ -165,11 +165,11 @@ public:
         SerialProtocol_FETtecOneWire = 38,
         SerialProtocol_Torqeedo = 39,
         SerialProtocol_AIS = 40,
-        SerialProtocol_ROS2 = 41,
         SerialProtocol_CoDevESC = 41,
         SerialProtocol_MSP_DisplayPort = 42,
         SerialProtocol_MAVLinkHL = 43,
         SerialProtocol_Tramp = 44,
+        SerialProtocol_ROS2 = 45,
         SerialProtocol_NumProtocols                    // must be the last value
     };
 
