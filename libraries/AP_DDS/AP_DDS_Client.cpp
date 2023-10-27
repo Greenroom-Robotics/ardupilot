@@ -727,7 +727,7 @@ bool AP_DDS_Client::create()
         .type = UXR_PARTICIPANT_ID
     };
     const char* participant_ref = "participant_profile";
-    const auto participant_req_id = uxr_buffer_create_participant_ref(&session, reliable_out, participant_id,0,participant_ref,UXR_REPLACE);
+    const auto participant_req_id = uxr_buffer_create_participant_ref(&session, reliable_out, participant_id,255,participant_ref,UXR_REPLACE);
 
     //Participant requests
     constexpr uint8_t nRequestsParticipant = 1;
