@@ -4,6 +4,7 @@
     <rtps>
       <name>ardupilot_dds</name>
     </rtps>
+    <domainId>51</domainId>
   </participant>
   <topic profile_name="time__t">
     <name>rt/ap/time</name>
