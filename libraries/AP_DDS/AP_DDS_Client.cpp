@@ -604,7 +604,7 @@ void AP_DDS_Client::main_loop(void)
         const uint8_t ping_max_attempts{10};
         if (!uxr_ping_agent_attempts(comm, ping_timeout_ms, ping_max_attempts)) {
             GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "DDS Client: No ping response, exiting");
-            return;
+            // return;
         }
 
         // create session
